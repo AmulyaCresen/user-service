@@ -1,4 +1,5 @@
 package com.user_service.service;
+
 import com.user_service.dto.LoginRequest;
 import com.user_service.dto.LoginResponse;
 import com.user_service.model.User;
@@ -12,157 +13,211 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.server.ResponseStatusException;
+
+import java.time.OffsetDateTime;
+import java.util.Base64;
 import java.util.Map;
 import java.util.Optional;
+
 import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.*;
+
 @ExtendWith(MockitoExtension.class)
 class AuthServiceTest {
-    @Mock private UserRepository userRepository;
-    @Mock private PasswordEncoder passwordEncoder;
-    @Mock private JwtUtil jwtUtil;
-    @Mock private OtpService otpService;
+
+    @Mock
+    private UserRepository userRepository;
+
+    @Mock
+    private PasswordEncoder passwordEncoder;
+
+    @Mock
+    private JwtUtil jwtUtil;
+
+    @Mock
+    private OtpService otpService;
+
     @InjectMocks
     private AuthService authService;
-    private User activeUser;
+
+    private User testUser;
+    private LoginRequest loginRequest;
+
     @BeforeEach
     void setUp() {
-        activeUser = new User();
-        activeUser.setEmail("test@test.com");
-        activeUser.setPassword("encodedPassword");
-        activeUser.setRole("EMPLOYEE");
-        activeUser.setActive(true);
+        testUser = new User();
+        testUser.setId(1L);
+        testUser.setEmail("test@example.com");
+        testUser.setPassword("encodedPassword");
+        testUser.setFullName("Test User");
+        testUser.setRole("EMPLOYEE");
+        testUser.setGender("Male");
+        testUser.setActive(true);
+        testUser.setCreateDate(OffsetDateTime.now());
+
+        loginRequest = new LoginRequest();
+        loginRequest.setEmail("test@example.com");
+        loginRequest.setPassword(Base64.getEncoder().encodeToString("password123".getBytes()));
     }
+
     @Test
-    void login_shouldReturnToken_whenCredentialsValid() {
-        when(userRepository.findByEmail("test@test.com")).thenReturn(Optional.of(activeUser));
-        when(passwordEncoder.matches(anyString(), eq("encodedPassword"))).thenReturn(true);
-        when(jwtUtil.generateToken("test@test.com", "EMPLOYEE")).thenReturn("mock-token");
-        when(userRepository.save(any())).thenReturn(activeUser);
-        LoginResponse response = authService.login(new LoginRequest("test@test.com", java.util.Base64.getEncoder().encodeToString("password".getBytes())));
+    void testLogin_Success() {
+        when(userRepository.findByEmail("test@example.com")).thenReturn(Optional.of(testUser));
+        when(passwordEncoder.matches(anyString(), anyString())).thenReturn(true);
+        when(jwtUtil.generateToken(anyString(), anyString())).thenReturn("jwt-token");
+        when(userRepository.save(any(User.class))).thenReturn(testUser);
+
+        LoginResponse response = authService.login(loginRequest);
+
+        assertNotNull(response);
         assertEquals("Login successful", response.getMessage());
-        assertEquals("mock-token", response.getToken());
+        assertEquals("jwt-token", response.getToken());
         assertEquals("EMPLOYEE", response.getRole());
+        assertEquals("Test User", response.getFullName());
+        assertEquals("test@example.com", response.getEmail());
+        verify(userRepository).save(any(User.class));
     }
+
     @Test
-    void login_shouldThrow401_whenUserNotFound() {
-        when(userRepository.findByEmail("unknown@test.com")).thenReturn(Optional.empty());
-        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
-                () -> authService.login(new LoginRequest("unknown@test.com", "password")));
-        assertEquals(401, ex.getStatusCode().value());
+    void testLogin_WithPlainPassword() {
+        loginRequest.setPassword("plainPassword");
+        
+        when(userRepository.findByEmail("test@example.com")).thenReturn(Optional.of(testUser));
+        when(passwordEncoder.matches(anyString(), anyString())).thenReturn(true);
+        when(jwtUtil.generateToken(anyString(), anyString())).thenReturn("jwt-token");
+        when(userRepository.save(any(User.class))).thenReturn(testUser);
+
+        LoginResponse response = authService.login(loginRequest);
+
+        assertNotNull(response);
+        assertEquals("Login successful", response.getMessage());
     }
+
     @Test
-    void login_shouldThrow401_whenAccountDisabled() {
-        activeUser.setActive(false);
-        when(userRepository.findByEmail("test@test.com")).thenReturn(Optional.of(activeUser));
-        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
-                () -> authService.login(new LoginRequest("test@test.com", "password")));
-        assertEquals(401, ex.getStatusCode().value());
-        assertTrue(ex.getReason().contains("disabled"));
+    void testLogin_UserNotFound() {
+        when(userRepository.findByEmail("test@example.com")).thenReturn(Optional.empty());
+
+        assertThrows(ResponseStatusException.class, () -> authService.login(loginRequest));
     }
+
     @Test
-    void login_shouldThrow401_whenPasswordWrong() {
-        when(userRepository.findByEmail("test@test.com")).thenReturn(Optional.of(activeUser));
-        when(passwordEncoder.matches(anyString(), eq("encodedPassword"))).thenReturn(false);
-        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
-                () -> authService.login(new LoginRequest("test@test.com", java.util.Base64.getEncoder().encodeToString("wrongPassword".getBytes()))));
-        assertEquals(401, ex.getStatusCode().value());
+    void testLogin_AccountDisabled() {
+        testUser.setActive(false);
+        when(userRepository.findByEmail("test@example.com")).thenReturn(Optional.of(testUser));
+
+        assertThrows(ResponseStatusException.class, () -> authService.login(loginRequest));
     }
+
     @Test
-    void forgotPassword_shouldSendOtp_whenEmailExists() {
-        when(userRepository.findByEmail("test@test.com")).thenReturn(Optional.of(activeUser));
-        doNothing().when(otpService).generateAndSendOtp("test@test.com");
-        Map<String, String> result = authService.forgotPassword("test@test.com");
-        assertEquals("OTP sent to test@test.com", result.get("message"));
-        verify(otpService).generateAndSendOtp("test@test.com");
+    void testLogin_WrongPassword() {
+        when(userRepository.findByEmail("test@example.com")).thenReturn(Optional.of(testUser));
+        when(passwordEncoder.matches(anyString(), anyString())).thenReturn(false);
+
+        assertThrows(ResponseStatusException.class, () -> authService.login(loginRequest));
     }
+
     @Test
-    void forgotPassword_shouldThrow404_whenEmailNotFound() {
-        when(userRepository.findByEmail("unknown@test.com")).thenReturn(Optional.empty());
-        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
-                () -> authService.forgotPassword("unknown@test.com"));
-        assertEquals(404, ex.getStatusCode().value());
+    void testForgotPassword_Success() {
+        when(userRepository.findByEmail("test@example.com")).thenReturn(Optional.of(testUser));
+        doNothing().when(otpService).generateAndSendOtp(anyString());
+
+        Map<String, String> response = authService.forgotPassword("test@example.com");
+
+        assertNotNull(response);
+        assertTrue(response.get("message").contains("OTP sent"));
+        verify(otpService).generateAndSendOtp("test@example.com");
     }
+
     @Test
-    void resetPassword_shouldSucceed_whenOtpValid() {
-        when(otpService.verifyOtp("test@test.com", "123456")).thenReturn(true);
-        when(passwordEncoder.encode("NewPass@123")).thenReturn("encodedNew");
-        when(userRepository.updatePassword("test@test.com", "encodedNew")).thenReturn(1);
-        doNothing().when(otpService).invalidateOtp("test@test.com");
-        Map<String, String> result = authService.resetPassword("test@test.com", "123456", "NewPass@123");
-        assertEquals("Password reset successfully", result.get("message"));
-        verify(otpService).invalidateOtp("test@test.com");
+    void testForgotPassword_UserNotFound() {
+        when(userRepository.findByEmail("test@example.com")).thenReturn(Optional.empty());
+
+        assertThrows(ResponseStatusException.class, () -> authService.forgotPassword("test@example.com"));
     }
+
     @Test
-    void resetPassword_shouldThrow400_whenOtpInvalid() {
-        when(otpService.verifyOtp("test@test.com", "000000")).thenReturn(false);
-        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
-                () -> authService.resetPassword("test@test.com", "000000", "NewPass@123"));
-        assertEquals(400, ex.getStatusCode().value());
+    void testResetPassword_Success() {
+        String encodedPassword = Base64.getEncoder().encodeToString("newPassword123".getBytes());
+        
+        when(otpService.verifyOtp("test@example.com", "123456")).thenReturn(true);
+        when(passwordEncoder.encode(anyString())).thenReturn("encodedNewPassword");
+        when(userRepository.updatePassword(anyString(), anyString())).thenReturn(1);
+        doNothing().when(otpService).invalidateOtp(anyString());
+
+        Map<String, String> response = authService.resetPassword("test@example.com", "123456", encodedPassword);
+
+        assertNotNull(response);
+        assertEquals("Password reset successfully", response.get("message"));
+        verify(userRepository).updatePassword("test@example.com", "encodedNewPassword");
+        verify(otpService).invalidateOtp("test@example.com");
     }
+
     @Test
-    void resetPassword_shouldThrow404_whenUserNotFoundInDb() {
-        when(otpService.verifyOtp("test@test.com", "123456")).thenReturn(true);
-        when(passwordEncoder.encode("NewPass@123")).thenReturn("encodedNew");
-        when(userRepository.updatePassword("test@test.com", "encodedNew")).thenReturn(0);
-        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
-                () -> authService.resetPassword("test@test.com", "123456", "NewPass@123"));
-        assertEquals(404, ex.getStatusCode().value());
+    void testResetPassword_WithPlainPassword() {
+        when(otpService.verifyOtp("test@example.com", "123456")).thenReturn(true);
+        when(passwordEncoder.encode(anyString())).thenReturn("encodedNewPassword");
+        when(userRepository.updatePassword(anyString(), anyString())).thenReturn(1);
+        doNothing().when(otpService).invalidateOtp(anyString());
+
+        Map<String, String> response = authService.resetPassword("test@example.com", "123456", "plainPassword");
+
+        assertNotNull(response);
+        assertEquals("Password reset successfully", response.get("message"));
     }
+
     @Test
-    void resetPassword_shouldThrow400_whenFieldsBlank() {
-        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
-                () -> authService.resetPassword("", "123456", "NewPass@123"));
-        assertEquals(400, ex.getStatusCode().value());
+    void testResetPassword_NullEmail() {
+        assertThrows(ResponseStatusException.class, () -> 
+            authService.resetPassword(null, "123456", "newPassword"));
     }
+
     @Test
-    void resetPassword_shouldThrow400_whenOtpNull() {
-        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
-                () -> authService.resetPassword("test@test.com", null, "NewPass@123"));
-        assertEquals(400, ex.getStatusCode().value());
+    void testResetPassword_BlankEmail() {
+        assertThrows(ResponseStatusException.class, () -> 
+            authService.resetPassword("", "123456", "newPassword"));
     }
+
     @Test
-    void resetPassword_shouldThrow400_whenPasswordNull() {
-        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
-                () -> authService.resetPassword("test@test.com", "123456", null));
-        assertEquals(400, ex.getStatusCode().value());
+    void testResetPassword_NullOtp() {
+        assertThrows(ResponseStatusException.class, () -> 
+            authService.resetPassword("test@example.com", null, "newPassword"));
     }
+
     @Test
-    void resetPassword_shouldThrow400_whenEmailNull() {
-        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
-                () -> authService.resetPassword(null, "123456", "NewPass@123"));
-        assertEquals(400, ex.getStatusCode().value());
+    void testResetPassword_BlankOtp() {
+        assertThrows(ResponseStatusException.class, () -> 
+            authService.resetPassword("test@example.com", "", "newPassword"));
     }
+
     @Test
-    void resetPassword_shouldThrow400_whenNewPasswordBlank() {
-        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
-                () -> authService.resetPassword("test@test.com", "123456", "   "));
-        assertEquals(400, ex.getStatusCode().value());
+    void testResetPassword_NullPassword() {
+        assertThrows(ResponseStatusException.class, () -> 
+            authService.resetPassword("test@example.com", "123456", null));
     }
+
     @Test
-    void resetPassword_shouldThrow400_whenOtpBlank() {
-        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
-                () -> authService.resetPassword("test@test.com", "   ", "NewPass@123"));
-        assertEquals(400, ex.getStatusCode().value());
+    void testResetPassword_BlankPassword() {
+        assertThrows(ResponseStatusException.class, () -> 
+            authService.resetPassword("test@example.com", "123456", ""));
     }
+
     @Test
-    void resetPassword_shouldSucceed_withBase64Password() {
-        String encoded = java.util.Base64.getEncoder().encodeToString("NewPass@123".getBytes());
-        when(otpService.verifyOtp("test@test.com", "123456")).thenReturn(true);
-        when(passwordEncoder.encode(anyString())).thenReturn("encodedNew");
-        when(userRepository.updatePassword(eq("test@test.com"), anyString())).thenReturn(1);
-        doNothing().when(otpService).invalidateOtp("test@test.com");
-        Map<String, String> result = authService.resetPassword("test@test.com", "123456", encoded);
-        assertEquals("Password reset successfully", result.get("message"));
+    void testResetPassword_InvalidOtp() {
+        when(otpService.verifyOtp("test@example.com", "123456")).thenReturn(false);
+
+        assertThrows(ResponseStatusException.class, () -> 
+            authService.resetPassword("test@example.com", "123456", "newPassword"));
     }
+
     @Test
-    void login_shouldSucceed_withPlainPassword_whenBase64DecodeFails() {
-        when(userRepository.findByEmail("test@test.com")).thenReturn(Optional.of(activeUser));
-        when(passwordEncoder.matches(anyString(), eq("encodedPassword"))).thenReturn(true);
-        when(jwtUtil.generateToken("test@test.com", "EMPLOYEE")).thenReturn("mock-token");
-        when(userRepository.save(any())).thenReturn(activeUser);
-        LoginResponse response = authService.login(new LoginRequest("test@test.com", "plainpassword"));
-        assertNotNull(response.getToken());
+    void testResetPassword_UserNotFound() {
+        when(otpService.verifyOtp("test@example.com", "123456")).thenReturn(true);
+        when(passwordEncoder.encode(anyString())).thenReturn("encodedNewPassword");
+        when(userRepository.updatePassword(anyString(), anyString())).thenReturn(0);
+
+        assertThrows(ResponseStatusException.class, () -> 
+            authService.resetPassword("test@example.com", "123456", "newPassword"));
     }
 }

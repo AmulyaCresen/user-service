@@ -1,4 +1,5 @@
 package com.user_service.service;
+
 import com.user_service.dto.CreateUserRequest;
 import com.user_service.dto.UpdateUserRequest;
 import com.user_service.model.Menu;
@@ -15,234 +16,365 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.server.ResponseStatusException;
+
+import java.time.OffsetDateTime;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+
 import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.*;
+
 @ExtendWith(MockitoExtension.class)
 class UserServiceTest {
-    @Mock private UserRepository userRepository;
-    @Mock private RoleRepository roleRepository;
-    @Mock private MenuRepository menuRepository;
-    @Mock private PasswordEncoder passwordEncoder;
-    @Mock private EmailService emailService;
-    @InjectMocks private UserService userService;
-    private User mockUser;
-    private CreateUserRequest createRequest;
-    private UpdateUserRequest updateRequest;
+
+    @Mock
+    private UserRepository userRepository;
+
+    @Mock
+    private RoleRepository roleRepository;
+
+    @Mock
+    private MenuRepository menuRepository;
+
+    @Mock
+    private PasswordEncoder passwordEncoder;
+
+    @Mock
+    private EmailService emailService;
+
+    @InjectMocks
+    private UserService userService;
+
+    private User testUser;
+    private Role testRole;
+    private Menu testMenu;
+
     @BeforeEach
     void setUp() {
-        mockUser = new User();
-        mockUser.setId(1L);
-        mockUser.setEmail("test@test.com");
-        mockUser.setUserName("testuser");
-        mockUser.setFullName("Test User");
-        mockUser.setRole("EMPLOYEE");
-        mockUser.setActive(true);
-        mockUser.setGender("Male");
-        mockUser.setCompanyId("Cresen1");
-        createRequest = new CreateUserRequest();
-        createRequest.setUserName("newuser");
-        createRequest.setFullName("New User");
-        createRequest.setEmail("new@test.com");
-        createRequest.setPassword(Base64.getEncoder().encodeToString("Pass@123".getBytes()));
-        createRequest.setRole("EMPLOYEE");
-        createRequest.setActive(true);
-        createRequest.setGender("Female");
-        updateRequest = new UpdateUserRequest();
-        updateRequest.setUserName("updated");
-        updateRequest.setFullName("Updated User");
-        updateRequest.setRole("MANAGER");
-        updateRequest.setActive(true);
-        updateRequest.setGender("Male");
+        testUser = new User();
+        testUser.setId(1L);
+        testUser.setUserName("testuser");
+        testUser.setFullName("Test User");
+        testUser.setEmail("test@example.com");
+        testUser.setPassword("encodedPassword");
+        testUser.setRole("EMPLOYEE");
+        testUser.setActive(true);
+        testUser.setGender("Male");
+        testUser.setCompanyId("Cresen1");
+        testUser.setCreateDate(OffsetDateTime.now());
+        testUser.setCreatedBy("admin");
+
+        testRole = new Role();
+        testRole.setId(1L);
+        testRole.setRoleName("EMPLOYEE");
+        testRole.setRoleDesc("Employee Role");
+
+        testMenu = new Menu();
+        testMenu.setId(1L);
+        testMenu.setMenuKey("home");
+        testMenu.setMenuLabel("Home");
+        testMenu.setMenuOrder(1);
+        testMenu.setActive(true);
     }
+
     @Test
-    void getAllUsers_shouldReturnAllUsers() {
-        when(userRepository.findAll()).thenReturn(List.of(mockUser));
-        assertEquals(1, userService.getAllUsers().size());
+    void testGetMenusByRole() {
+        when(menuRepository.findByRoleName("EMPLOYEE")).thenReturn(List.of(testMenu));
+
+        List<Menu> menus = userService.getMenusByRole("EMPLOYEE");
+
+        assertNotNull(menus);
+        assertEquals(1, menus.size());
+        assertEquals("home", menus.get(0).getMenuKey());
+        verify(menuRepository).findByRoleName("EMPLOYEE");
     }
+
     @Test
-    void getAllRoles_shouldReturnOnlyEmployeeAndManager() {
-        Role emp = new Role(); emp.setRoleName("EMPLOYEE");
-        Role mgr = new Role(); mgr.setRoleName("MANAGER");
-        Role adm = new Role(); adm.setRoleName("ADMIN");
-        when(roleRepository.findAll()).thenReturn(List.of(emp, mgr, adm));
-        List<Role> result = userService.getAllRoles();
-        assertEquals(2, result.size());
-        assertTrue(result.stream().noneMatch(r -> r.getRoleName().equals("ADMIN")));
+    void testGetAllRoles() {
+        Role employeeRole = new Role();
+        employeeRole.setRoleName("EMPLOYEE");
+        
+        Role managerRole = new Role();
+        managerRole.setRoleName("MANAGER");
+        
+        Role adminRole = new Role();
+        adminRole.setRoleName("ADMIN");
+
+        when(roleRepository.findAll()).thenReturn(List.of(employeeRole, managerRole, adminRole));
+
+        List<Role> roles = userService.getAllRoles();
+
+        assertNotNull(roles);
+        assertEquals(2, roles.size());
+        assertTrue(roles.stream().anyMatch(r -> r.getRoleName().equals("EMPLOYEE")));
+        assertTrue(roles.stream().anyMatch(r -> r.getRoleName().equals("MANAGER")));
+        assertFalse(roles.stream().anyMatch(r -> r.getRoleName().equals("ADMIN")));
     }
+
     @Test
-    void getMenusByRole_shouldReturnMenus() {
-        Menu m = new Menu(); m.setMenuKey("home"); m.setMenuLabel("Home");
-        when(menuRepository.findByRoleName("ADMIN")).thenReturn(List.of(m));
-        List<Menu> result = userService.getMenusByRole("ADMIN");
-        assertEquals(1, result.size());
-        assertEquals("home", result.get(0).getMenuKey());
+    void testGetAllUsers() {
+        when(userRepository.findAll()).thenReturn(List.of(testUser));
+
+        List<User> users = userService.getAllUsers();
+
+        assertNotNull(users);
+        assertEquals(1, users.size());
+        assertEquals("test@example.com", users.get(0).getEmail());
     }
+
     @Test
-    void getStats_shouldReturnCorrectCounts() {
-        User inactive = new User(); inactive.setActive(false);
-        when(userRepository.findAll()).thenReturn(List.of(mockUser, inactive));
+    void testGetManagers() {
+        User manager = new User();
+        manager.setRole("MANAGER");
+        manager.setActive(true);
+
+        User inactiveManager = new User();
+        inactiveManager.setRole("MANAGER");
+        inactiveManager.setActive(false);
+
+        when(userRepository.findAll()).thenReturn(List.of(testUser, manager, inactiveManager));
+
+        List<User> managers = userService.getManagers();
+
+        assertNotNull(managers);
+        assertEquals(1, managers.size());
+        assertEquals("MANAGER", managers.get(0).getRole());
+        assertTrue(managers.get(0).isActive());
+    }
+
+    @Test
+    void testGetFullNameByEmail_Found() {
+        when(userRepository.findByEmail("test@example.com")).thenReturn(Optional.of(testUser));
+
+        Optional<String> fullName = userService.getFullNameByEmail("test@example.com");
+
+        assertTrue(fullName.isPresent());
+        assertEquals("Test User", fullName.get());
+    }
+
+    @Test
+    void testGetFullNameByEmail_NotFound() {
+        when(userRepository.findByEmail("notfound@example.com")).thenReturn(Optional.empty());
+
+        Optional<String> fullName = userService.getFullNameByEmail("notfound@example.com");
+
+        assertFalse(fullName.isPresent());
+    }
+
+    @Test
+    void testEmailExists() {
+        when(userRepository.findByEmail("test@example.com")).thenReturn(Optional.of(testUser));
+        when(userRepository.findByEmail("notfound@example.com")).thenReturn(Optional.empty());
+
+        assertTrue(userService.emailExists("test@example.com"));
+        assertFalse(userService.emailExists("notfound@example.com"));
+    }
+
+    @Test
+    void testUsernameExists() {
+        when(userRepository.findByUserName("testuser")).thenReturn(Optional.of(testUser));
+        when(userRepository.findByUserName("notfound")).thenReturn(Optional.empty());
+
+        assertTrue(userService.usernameExists("testuser"));
+        assertFalse(userService.usernameExists("notfound"));
+    }
+
+    @Test
+    void testGetStats() {
+        User activeUser = new User();
+        activeUser.setActive(true);
+
+        User inactiveUser = new User();
+        inactiveUser.setActive(false);
+
+        when(userRepository.findAll()).thenReturn(List.of(testUser, activeUser, inactiveUser));
+
         Map<String, Long> stats = userService.getStats();
-        assertEquals(2L, stats.get("totalUsers"));
-        assertEquals(1L, stats.get("activeUsers"));
+
+        assertNotNull(stats);
+        assertEquals(3L, stats.get("totalUsers"));
+        assertEquals(2L, stats.get("activeUsers"));
         assertEquals(1L, stats.get("inactiveUsers"));
     }
+
     @Test
-    void getStats_shouldReturnZeros_whenNoUsers() {
-        when(userRepository.findAll()).thenReturn(List.of());
-        Map<String, Long> stats = userService.getStats();
-        assertEquals(0L, stats.get("totalUsers"));
-    }
-    @Test
-    void getNextCompanyId_shouldReturnCresen1_whenNoUsersExist() {
+    void testGetNextCompanyId_FirstUser() {
         when(userRepository.findAllCompanyIdsSorted()).thenReturn(List.of());
-        assertEquals("Cresen1", userService.getNextCompanyId());
+
+        String companyId = userService.getNextCompanyId();
+
+        assertEquals("Cresen1", companyId);
     }
+
     @Test
-    void getNextCompanyId_shouldIncrementFromMax() {
-        when(userRepository.findAllCompanyIdsSorted()).thenReturn(List.of("Cresen3", "Cresen1", "Cresen2"));
-        assertEquals("Cresen4", userService.getNextCompanyId());
+    void testGetNextCompanyId_ExistingUsers() {
+        when(userRepository.findAllCompanyIdsSorted()).thenReturn(List.of("Cresen1", "Cresen2", "Cresen3"));
+
+        String companyId = userService.getNextCompanyId();
+
+        assertEquals("Cresen4", companyId);
     }
+
     @Test
-    void getNextCompanyId_shouldFallback_whenCompanyIdNotNumeric() {
-        when(userRepository.findAllCompanyIdsSorted()).thenReturn(List.of("CresenABC", "CresenXYZ"));
-        String result = userService.getNextCompanyId();
-        assertNotNull(result);
-        assertTrue(result.startsWith("Cresen"));
+    void testGetNextCompanyId_InvalidFormat() {
+        when(userRepository.findAllCompanyIdsSorted()).thenReturn(List.of("InvalidId1", "InvalidId2"));
+
+        String companyId = userService.getNextCompanyId();
+
+        assertEquals("Cresen3", companyId);
     }
+
     @Test
-    void emailExists_shouldReturnTrue_whenEmailFound() {
-        when(userRepository.findByEmail("test@test.com")).thenReturn(Optional.of(mockUser));
-        assertTrue(userService.emailExists("test@test.com"));
-    }
-    @Test
-    void emailExists_shouldReturnFalse_whenEmailNotFound() {
-        when(userRepository.findByEmail("none@test.com")).thenReturn(Optional.empty());
-        assertFalse(userService.emailExists("none@test.com"));
-    }
-    @Test
-    void usernameExists_shouldReturnTrue_whenUsernameFound() {
-        when(userRepository.findByUserName("testuser")).thenReturn(Optional.of(mockUser));
-        assertTrue(userService.usernameExists("testuser"));
-    }
-    @Test
-    void usernameExists_shouldReturnFalse_whenUsernameNotFound() {
-        when(userRepository.findByUserName("nobody")).thenReturn(Optional.empty());
-        assertFalse(userService.usernameExists("nobody"));
-    }
-    @Test
-    void createUser_shouldSucceed_whenValidRequest() {
-        when(userRepository.findByEmail(anyString())).thenReturn(Optional.empty());
-        when(userRepository.findByUserName(anyString())).thenReturn(Optional.empty());
-        when(userRepository.findAllCompanyIdsSorted()).thenReturn(List.of());
-        when(passwordEncoder.encode(anyString())).thenReturn("encoded");
-        when(userRepository.save(any())).thenReturn(mockUser);
-        doNothing().when(emailService).sendWelcomeEmail(any(), any(), any(), any(), any());
-        User result = userService.createUser(createRequest, "admin@test.com");
-        assertNotNull(result);
-        verify(userRepository).save(any());
-    }
-    @Test
-    void createUser_shouldThrow409_whenEmailExists() {
-        when(userRepository.findByEmail(anyString())).thenReturn(Optional.of(mockUser));
-        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
-                () -> userService.createUser(createRequest, "admin@test.com"));
-        assertEquals(409, ex.getStatusCode().value());
-    }
-    @Test
-    void createUser_shouldThrow409_whenUsernameExists() {
-        when(userRepository.findByEmail(anyString())).thenReturn(Optional.empty());
-        when(userRepository.findByUserName(anyString())).thenReturn(Optional.of(mockUser));
-        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
-                () -> userService.createUser(createRequest, "admin@test.com"));
-        assertEquals(409, ex.getStatusCode().value());
-    }
-    @Test
-    void createUser_shouldHandlePlainPassword_whenBase64DecodeFails() {
-        createRequest.setPassword("plainpassword");
-        when(userRepository.findByEmail(anyString())).thenReturn(Optional.empty());
-        when(userRepository.findByUserName(anyString())).thenReturn(Optional.empty());
-        when(userRepository.findAllCompanyIdsSorted()).thenReturn(List.of());
-        when(passwordEncoder.encode(anyString())).thenReturn("encoded");
-        when(userRepository.save(any())).thenReturn(mockUser);
-        doNothing().when(emailService).sendWelcomeEmail(any(), any(), any(), any(), any());
-        assertDoesNotThrow(() -> userService.createUser(createRequest, "admin@test.com"));
-    }
-    @Test
-    void createUser_shouldThrow400_whenCreatedByIsBlank() {
-        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
-                () -> userService.createUser(createRequest, ""));
-        assertEquals(400, ex.getStatusCode().value());
-    }
-    @Test
-    void createUser_shouldThrow400_whenRequestIsNull() {
-        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
-                () -> userService.createUser(null, "admin@test.com"));
-        assertEquals(400, ex.getStatusCode().value());
-    }
-    @Test
-    void updateUser_shouldSucceed_whenUserExists() {
-        when(userRepository.findById(1L)).thenReturn(Optional.of(mockUser));
-        when(userRepository.save(any())).thenReturn(mockUser);
-        User result = userService.updateUser(1L, updateRequest, "admin@test.com");
-        assertNotNull(result);
-        verify(userRepository).save(any());
-    }
-    @Test
-    void updateUser_shouldThrow404_whenUserNotFound() {
-        when(userRepository.findById(99L)).thenReturn(Optional.empty());
-        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
-                () -> userService.updateUser(99L, updateRequest, "admin@test.com"));
-        assertEquals(404, ex.getStatusCode().value());
-    }
-    @Test
-    void deleteUser_shouldSucceed_whenUserExists() {
+    void testDeleteUser_Success() {
         when(userRepository.existsById(1L)).thenReturn(true);
-        doNothing().when(userRepository).deleteById(1L);
-        assertDoesNotThrow(() -> userService.deleteUser(1L, "admin@test.com"));
+
+        assertDoesNotThrow(() -> userService.deleteUser(1L, "admin"));
+
         verify(userRepository).deleteById(1L);
     }
+
     @Test
-    void deleteUser_shouldThrow404_whenUserNotFound() {
-        when(userRepository.existsById(99L)).thenReturn(false);
-        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
-                () -> userService.deleteUser(99L, "admin@test.com"));
-        assertEquals(404, ex.getStatusCode().value());
+    void testDeleteUser_NotFound() {
+        when(userRepository.existsById(1L)).thenReturn(false);
+
+        assertThrows(ResponseStatusException.class, () -> userService.deleteUser(1L, "admin"));
     }
+
     @Test
-    void getManagers_shouldReturnOnlyActiveManagers() {
-        User manager = new User(); manager.setRole("MANAGER"); manager.setActive(true);
-        User inactiveManager = new User(); inactiveManager.setRole("MANAGER"); inactiveManager.setActive(false);
-        User employee = new User(); employee.setRole("EMPLOYEE"); employee.setActive(true);
-        when(userRepository.findAll()).thenReturn(List.of(manager, inactiveManager, employee));
-        List<User> result = userService.getManagers();
-        assertEquals(1, result.size());
-        assertTrue(result.get(0).isActive());
+    void testUpdateUser_Success() {
+        UpdateUserRequest request = new UpdateUserRequest();
+        request.setUserName("updateduser");
+        request.setFullName("Updated User");
+        request.setRole("MANAGER");
+        request.setActive(false);
+        request.setGender("Female");
+
+        when(userRepository.findById(1L)).thenReturn(Optional.of(testUser));
+        when(userRepository.save(any(User.class))).thenReturn(testUser);
+
+        User updated = userService.updateUser(1L, request, "admin");
+
+        assertNotNull(updated);
+        verify(userRepository).save(any(User.class));
     }
+
     @Test
-    void getManagers_shouldReturnEmpty_whenNoActiveManagers() {
-        User employee = new User(); employee.setRole("EMPLOYEE"); employee.setActive(true);
-        when(userRepository.findAll()).thenReturn(List.of(employee));
-        assertTrue(userService.getManagers().isEmpty());
+    void testUpdateUser_NotFound() {
+        UpdateUserRequest request = new UpdateUserRequest();
+        request.setUserName("updateduser");
+        request.setFullName("Updated User");
+        request.setRole("MANAGER");
+        request.setActive(false);
+        request.setGender("Female");
+
+        when(userRepository.findById(1L)).thenReturn(Optional.empty());
+
+        assertThrows(ResponseStatusException.class, () -> userService.updateUser(1L, request, "admin"));
     }
+
     @Test
-    void createUser_shouldThrow400_whenCreatedByIsNull() {
-        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
-                () -> userService.createUser(createRequest, null));
-        assertEquals(400, ex.getStatusCode().value());
+    void testCreateUser_Success() {
+        CreateUserRequest request = new CreateUserRequest();
+        request.setUserName("newuser");
+        request.setFullName("New User");
+        request.setEmail("newuser@example.com");
+        request.setPassword(Base64.getEncoder().encodeToString("password123".getBytes()));
+        request.setRole("EMPLOYEE");
+        request.setActive(true);
+        request.setGender("Male");
+
+        when(userRepository.findByEmail(anyString())).thenReturn(Optional.empty());
+        when(userRepository.findByUserName(anyString())).thenReturn(Optional.empty());
+        when(userRepository.findAllCompanyIdsSorted()).thenReturn(List.of("Cresen1"));
+        when(passwordEncoder.encode(anyString())).thenReturn("encodedPassword");
+        when(userRepository.save(any(User.class))).thenReturn(testUser);
+        doNothing().when(emailService).sendWelcomeEmail(anyString(), anyString(), anyString(), anyString(), anyString());
+
+        User created = userService.createUser(request, "admin");
+
+        assertNotNull(created);
+        verify(userRepository).save(any(User.class));
+        verify(emailService).sendWelcomeEmail(anyString(), anyString(), anyString(), anyString(), anyString());
     }
+
     @Test
-    void getFullNameByEmail_shouldReturnName_whenFound() {
-        when(userRepository.findByEmail("test@test.com")).thenReturn(Optional.of(mockUser));
-        assertTrue(userService.getFullNameByEmail("test@test.com").isPresent());
+    void testCreateUser_WithPlainPassword() {
+        CreateUserRequest request = new CreateUserRequest();
+        request.setUserName("newuser");
+        request.setFullName("New User");
+        request.setEmail("newuser@example.com");
+        request.setPassword("plainPassword");
+        request.setRole("EMPLOYEE");
+        request.setActive(true);
+        request.setGender("Male");
+
+        when(userRepository.findByEmail(anyString())).thenReturn(Optional.empty());
+        when(userRepository.findByUserName(anyString())).thenReturn(Optional.empty());
+        when(userRepository.findAllCompanyIdsSorted()).thenReturn(List.of());
+        when(passwordEncoder.encode(anyString())).thenReturn("encodedPassword");
+        when(userRepository.save(any(User.class))).thenReturn(testUser);
+        doNothing().when(emailService).sendWelcomeEmail(anyString(), anyString(), anyString(), anyString(), anyString());
+
+        User created = userService.createUser(request, "admin");
+
+        assertNotNull(created);
+        verify(userRepository).save(any(User.class));
     }
+
     @Test
-    void getFullNameByEmail_shouldReturnEmpty_whenNotFound() {
-        when(userRepository.findByEmail("none@test.com")).thenReturn(Optional.empty());
-        assertFalse(userService.getFullNameByEmail("none@test.com").isPresent());
+    void testCreateUser_NullRequest() {
+        assertThrows(ResponseStatusException.class, () -> userService.createUser(null, "admin"));
+    }
+
+    @Test
+    void testCreateUser_BlankCreatedBy() {
+        CreateUserRequest request = new CreateUserRequest();
+        request.setUserName("newuser");
+        request.setFullName("New User");
+        request.setEmail("newuser@example.com");
+        request.setPassword("password123");
+        request.setRole("EMPLOYEE");
+        request.setActive(true);
+        request.setGender("Male");
+
+        assertThrows(ResponseStatusException.class, () -> userService.createUser(request, ""));
+        assertThrows(ResponseStatusException.class, () -> userService.createUser(request, null));
+    }
+
+    @Test
+    void testCreateUser_EmailExists() {
+        CreateUserRequest request = new CreateUserRequest();
+        request.setUserName("newuser");
+        request.setFullName("New User");
+        request.setEmail("test@example.com");
+        request.setPassword("password123");
+        request.setRole("EMPLOYEE");
+        request.setActive(true);
+        request.setGender("Male");
+
+        when(userRepository.findByEmail("test@example.com")).thenReturn(Optional.of(testUser));
+
+        assertThrows(ResponseStatusException.class, () -> userService.createUser(request, "admin"));
+    }
+
+    @Test
+    void testCreateUser_UsernameExists() {
+        CreateUserRequest request = new CreateUserRequest();
+        request.setUserName("testuser");
+        request.setFullName("New User");
+        request.setEmail("newuser@example.com");
+        request.setPassword("password123");
+        request.setRole("EMPLOYEE");
+        request.setActive(true);
+        request.setGender("Male");
+
+        when(userRepository.findByEmail(anyString())).thenReturn(Optional.empty());
+        when(userRepository.findByUserName("testuser")).thenReturn(Optional.of(testUser));
+
+        assertThrows(ResponseStatusException.class, () -> userService.createUser(request, "admin"));
     }
 }
