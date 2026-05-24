@@ -18,6 +18,8 @@ import java.nio.charset.StandardCharsets;
 import java.time.OffsetDateTime;
 import java.util.Base64;
 import java.util.List;
+import org.springframework.cache.annotation.Cacheable;
+import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.transaction.annotation.Transactional;
 @Service
 @RequiredArgsConstructor
@@ -29,21 +31,23 @@ public class UserService {
     private final MenuRepository menuRepository;
     private final PasswordEncoder passwordEncoder;
     private final EmailService emailService;
+    @Cacheable(value = "menus", key = "#roleName", unless = "#result == null || #result.isEmpty()")
     public List<Menu> getMenusByRole(String roleName) {
         return menuRepository.findByRoleName(roleName);
     }
+    @Cacheable(value = "roles", unless = "#result == null || #result.isEmpty()")
     public List<Role> getAllRoles() {
         return roleRepository.findAll().stream()
                 .filter(r -> r.getRoleName().equals("EMPLOYEE") || r.getRoleName().equals("MANAGER"))
                 .toList();
     }
+    @Cacheable(value = "users", unless = "#result == null || #result.isEmpty()")
     public List<User> getAllUsers() {
         return userRepository.findAll();
     }
+    @Cacheable(value = "managers", unless = "#result == null || #result.isEmpty()")
     public List<User> getManagers() {
-        return userRepository.findAll().stream()
-                .filter(u -> "MANAGER".equalsIgnoreCase(u.getRole()) && u.isActive())
-                .toList();
+        return userRepository.findByRoleIgnoreCaseAndActiveTrue("MANAGER");
     }
     public java.util.Optional<String> getFullNameByEmail(String email) {
         return userRepository.findByEmail(email).map(User::getFullName);
@@ -54,13 +58,12 @@ public class UserService {
     public boolean usernameExists(String username) {
         return userRepository.findByUserName(username).isPresent();
     }
+    @Cacheable(value = "stats")
     public java.util.Map<String, Long> getStats() {
-        List<User> users = userRepository.findAll();
-        long total = users.size();
-        long active = users.stream().filter(User::isActive).count();
-        long inactive = total - active;
+        long active = userRepository.countByActiveTrue();
+        long inactive = userRepository.countByActiveFalse();
         return java.util.Map.of(
-                "totalUsers", total,
+                "totalUsers", active + inactive,
                 "activeUsers", active,
                 "inactiveUsers", inactive
         );
@@ -81,6 +84,7 @@ public class UserService {
             return COMPANY_PREFIX + (ids.size() + 1);
         }
     }
+    @CacheEvict(value = {"users", "stats", "managers"}, allEntries = true)
     @Transactional
     public void deleteUser(Long id, String deletedBy) {
         if (!userRepository.existsById(id))
@@ -88,6 +92,7 @@ public class UserService {
         userRepository.deleteById(id);
         log.info("[USER] Deleted user id={} by {}", id, deletedBy);
     }
+    @CacheEvict(value = {"users", "stats", "managers"}, allEntries = true)
     @Transactional
     public User updateUser(Long id, UpdateUserRequest request, String updatedBy) {
         User user = userRepository.findById(id)
@@ -103,6 +108,7 @@ public class UserService {
         log.info("[USER] Updated user id={} by {}", id, updatedBy);
         return saved;
     }
+    @CacheEvict(value = {"users", "stats", "managers"}, allEntries = true)
     public User createUser(CreateUserRequest request, String createdBy) {
         if (request == null) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Request cannot be null");
         if (createdBy == null || createdBy.isBlank()) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "CreatedBy cannot be blank");
@@ -135,4 +141,4 @@ public class UserService {
         emailService.sendWelcomeEmail(saved.getEmail(), saved.getFullName(), saved.getUserName(), companyId, decodedPassword);
         return saved;
     }
-}
+}

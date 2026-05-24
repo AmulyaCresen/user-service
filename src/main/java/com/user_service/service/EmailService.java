@@ -15,7 +15,7 @@ public class EmailService {
     private final JavaMailSender mailSender;
     @Value("${spring.mail.username}")
     private String senderEmail;
-    @Async
+    @Async("mailExecutor")
     public void sendOtpEmail(String email, String otp) {
         log.info("[EMAIL] Async thread started — sending OTP to: {}", email);
         try {
@@ -36,7 +36,7 @@ public class EmailService {
             log.error("[EMAIL]  Failed to send OTP email to: {} | Reason: {}", email, e.getMessage(), e);
         }
     }
-    @Async
+    @Async("mailExecutor")
     public void sendWelcomeEmail(String email, String fullName, String userName, String companyId, String rawPassword) {
         log.info("[EMAIL] Sending welcome email to: {}", email);
         try {

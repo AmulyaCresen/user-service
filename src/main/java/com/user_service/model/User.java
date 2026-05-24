@@ -5,7 +5,10 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 import java.time.OffsetDateTime;
 @Entity
-@Table(name = "user_profile", schema = "code")
+@Table(name = "user_profile", schema = "code", indexes = {
+    @Index(name = "idx_user_role", columnList = "role"),
+    @Index(name = "idx_user_active", columnList = "active")
+})
 @Getter
 @Setter
 @NoArgsConstructor
@@ -39,4 +42,4 @@ public class User {
     private OffsetDateTime lastLogin;
     @Column(name = "gender")
     private String gender;
-}
+}
